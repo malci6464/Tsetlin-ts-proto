@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Maritime hazard detection — Tsetlin Explorer</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js" defer></script>
+    <script src="assets/js/data.js" defer></script>
+  </head>
+  <body data-page="maritime">
+    <header>
+      <h1>Maritime hazard detection</h1>
+      <p>
+        Visual summary of the <strong>20251003_125026</strong> training run located in
+        <code>time_series_outputs/maritime/20251003_125026</code>.
+      </p>
+    </header>
+    <main>
+      <section>
+        <h2>Run summary</h2>
+        <div id="accuracy-badges" style="display: flex; gap: 0.5rem; flex-wrap: wrap"></div>
+        <div class="card-grid" style="margin-top: 1rem">
+          <div class="card">
+            <h3>Metadata</h3>
+            <ul id="metadata-list" class="summary-list"></ul>
+          </div>
+          <div class="card">
+            <h3>Hyperparameters</h3>
+            <ul id="hyperparameter-list" class="summary-list"></ul>
+          </div>
+          <div class="card">
+            <h3>Sensor channels</h3>
+            <ul id="sensor-list"></ul>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Accuracy over epochs</h2>
+        <canvas id="accuracy-chart" height="300"></canvas>
+      </section>
+
+      <section>
+        <h2>Prediction summary</h2>
+        <div id="prediction-summary"></div>
+      </section>
+
+      <section>
+        <h2>Sample windows</h2>
+        <p>The first 20 samples from <code>sample_windows.csv</code>.</p>
+        <div id="sample-table" class="table-scroll"></div>
+      </section>
+    </main>
+    <footer>
+      <p><a href="index.html">Back to all scenarios</a></p>
+    </footer>
+  </body>
+</html>
