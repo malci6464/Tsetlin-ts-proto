@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Seasonal temperature forecasting — Tsetlin Explorer</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js" defer></script>
+    <script src="assets/js/data.js" defer></script>
+  </head>
+  <body data-page="temperature">
+    <header>
+      <h1>Seasonal temperature forecasting</h1>
+      <p>
+        Synthetic hourly readings with intertwined seasonal and daily cycles, built to showcase how a
+        Tsetlin machine reasons over interpretable sensor patterns. Jump to the
+        <a href="#why-tsetlin">why Tsetlin?</a> section to see how it compares with deep learning.
+      </p>
+    </header>
+    <main>
+      <section>
+        <h2>Run summary</h2>
+        <div id="accuracy-badges" style="display: flex; gap: 0.5rem; flex-wrap: wrap"></div>
+        <div class="card-grid" style="margin-top: 1rem">
+          <div class="card">
+            <h3>Metadata</h3>
+            <ul id="metadata-list" class="summary-list"></ul>
+          </div>
+          <div class="card">
+            <h3>Hyperparameters</h3>
+            <ul id="hyperparameter-list" class="summary-list"></ul>
+          </div>
+          <div class="card">
+            <h3>Sensor channels</h3>
+            <ul id="sensor-list"></ul>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Accuracy over epochs</h2>
+        <canvas id="accuracy-chart" height="300"></canvas>
+      </section>
+
+      <section id="pattern-overview">
+        <h2>Pattern overview</h2>
+        <p>
+          The dataset fuses an annual cycle, daily heating and cooling, and gust-driven noise. The
+          plots below show how the Tsetlin machine aligns to these components before predicting the
+          next hour.
+        </p>
+        <canvas id="temperature-series-chart" height="320"></canvas>
+        <canvas id="daily-profile-chart" height="280" style="margin-top: 1.5rem"></canvas>
+      </section>
+
+      <section>
+        <h2>Prediction summary</h2>
+        <div id="prediction-summary"></div>
+        <canvas id="temperature-prediction-chart" height="300" style="margin-top: 1.5rem"></canvas>
+      </section>
+
+      <section>
+        <h2>Sample windows</h2>
+        <p>The first 15 daily snapshots used to build clause activity patterns.</p>
+        <div id="temperature-sample-table" class="table-scroll"></div>
+      </section>
+
+      <section id="why-tsetlin">
+        <h2>Why Tsetlin handles this differently than deep learning</h2>
+        <p>
+          Clause-based learning builds human-readable rules over binary sensor activations. Where a
+          deep neural net would optimize thousands of floating-point weights, the Tsetlin machine
+          toggles literal include/exclude states, producing sparse logic we can inspect.
+        </p>
+        <div class="card-grid">
+          <div class="card">
+            <h3>Transparent reasoning</h3>
+            <p>
+              Each clause votes for or against “next hour warmer” using combinations such as
+              <em>warm seasonal surge</em> AND <em>afternoon sun gain</em> while excluding
+              <em>cold gust anomalies</em>.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Data efficiency</h3>
+            <p>
+              Binary clauses converge with far less data than recurrent networks because they exploit
+              explicit domain priors encoded in the sensors.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Edge-friendly footprint</h3>
+            <p>
+              The trained model weighs only a few kilobytes, making hourly updates feasible on
+              low-power weather stations.
+            </p>
+          </div>
+        </div>
+        <canvas id="model-comparison-chart" height="260" style="margin-top: 1.5rem"></canvas>
+        <p>
+          The comparison highlights how Tsetlin clauses trade a small hit in absolute accuracy for a
+          dramatic reduction in parameters and energy draw—ideal for sensor deployments that require
+          explainability and battery longevity.
+        </p>
+      </section>
+    </main>
+    <footer>
+      <p><a href="index.html">Back to all scenarios</a></p>
+    </footer>
+  </body>
+</html>
