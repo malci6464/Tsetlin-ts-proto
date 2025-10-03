@@ -1,0 +1,149 @@
+:root {
+  color-scheme: light dark;
+  font-family: "Inter", "Segoe UI", sans-serif;
+  line-height: 1.5;
+  font-size: 16px;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: #f5f5f8;
+  color: #1f2933;
+}
+
+a {
+  color: #2563eb;
+}
+
+a:hover {
+  text-decoration: none;
+}
+
+header {
+  background: linear-gradient(90deg, #1f2933, #0f172a);
+  color: #f9fafb;
+  padding: 2rem 1.5rem;
+  text-align: center;
+}
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+section {
+  margin-bottom: 3rem;
+  background: white;
+  padding: 1.5rem;
+  border-radius: 16px;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+}
+
+section h2 {
+  margin-top: 0;
+}
+
+.dataset-card {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+.dataset-card ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.card {
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.card h3 {
+  margin-top: 0;
+  font-size: 1rem;
+  color: #0f172a;
+}
+
+.summary-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.summary-list li {
+  padding: 0.35rem 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.summary-list li:last-child {
+  border-bottom: none;
+}
+
+footer {
+  text-align: center;
+  color: #64748b;
+  margin: 4rem 0 2rem;
+  font-size: 0.85rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #0b1120;
+    color: #e2e8f0;
+  }
+
+  section {
+    background: #111827;
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.55);
+  }
+
+  tbody tr:nth-child(even) {
+    background: #1f2937;
+  }
+
+  .card {
+    background: #1f2937;
+  }
+
+  th, td {
+    border-color: #1f2937;
+  }
+}

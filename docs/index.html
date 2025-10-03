@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tsetlin Time Series Demo Explorer</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Tsetlin Time Series Demo Explorer</h1>
+      <p>A lightweight viewer for the demo outputs bundled with this repository.</p>
+    </header>
+    <main>
+      <section>
+        <h2>About</h2>
+        <p>
+          This site renders a quick overview of the saved outputs from the demo time-series
+          experiments in this repository. Use it to browse metadata, training accuracy curves,
+          and sample predictions without needing to run the Python notebooks.
+        </p>
+      </section>
+
+      <section class="dataset-card">
+        <div>
+          <h2>Available scenarios</h2>
+          <p>
+            The following pages point at the raw files under
+            <code>time_series_outputs/</code> so they stay in sync with future runs.
+          </p>
+          <ul>
+            <li><a href="maritime.html">Maritime hazard detection</a></li>
+          </ul>
+        </div>
+      </section>
+    </main>
+    <footer>
+      <p>Built with vanilla HTML, CSS, and JavaScript for GitHub Pages hosting.</p>
+    </footer>
+  </body>
+</html>
