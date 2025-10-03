@@ -12,3 +12,11 @@ Tsetlin Machines to different problem domains.
   When Matplotlib is available the learning curves are rendered as PNG files;
   otherwise a textual fallback is emitted so the workflow remains runnable
   without network access.
+
+## Research planning notes
+
+- [High-frequency Sensor Benchmark: PAMAP2 Activity Monitoring](docs/research/high_frequency_sensor_plan.md)
+  summarises a high-density wearable dataset with published transformer and
+  LSTM baselines. The note now links to `datasets/pamap2.py` for runtime
+  ingestion/windowing helpers and `examples/pamap2_tsetlin.py` for a CLI
+  experiment that trains the surrogate Tsetlin Machine on PAMAP2 windows.
