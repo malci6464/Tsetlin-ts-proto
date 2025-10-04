@@ -11,6 +11,11 @@ to experiment with a Tsetlin Machine on sequential data:
     Mimics aggregated maritime sensor alarms (wave height, hull vibration,
     etc.) and tasks the model with identifying hazardous vessel behaviour.
 
+``industrial``
+    Synthesises high-dimensional industrial telemetry (thousands of sensors)
+    and evaluates the model's ability to raise alarms when multiple
+    sub-systems breach safety thresholds simultaneously.
+
 For each run the script records the training and test accuracy after every
 epoch, saves the results to CSV/JSON files, and attempts to render a plot of
 the learning dynamics. When Matplotlib is unavailable (e.g. in offline
@@ -38,11 +43,15 @@ import csv
 import importlib.util
 import json
 import random
+import time
 import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Sequence, Tuple
+
+import tracemalloc
+from statistics import mean
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -241,6 +250,152 @@ def generate_maritime_sensor_dataset(
     return DatasetBundle(Dataset(inputs, targets), metadata)
 
 
+def generate_industrial_sensor_dataset(
+    n_samples: int,
+    n_sensors: int = 3000,
+    hazard_probability: float = 0.18,
+    noise_probability: float = 0.015,
+    rng: random.Random | None = None,
+) -> DatasetBundle:
+    """Create a multi-sensor industrial anomaly detection dataset.
+
+    Each sample represents a 10 second snapshot of more than three thousand
+    binary threshold indicators gathered from different subsystems (engine,
+    pumps, turbines, etc.).  Alarms are triggered by specific combinations of
+    sensor breaches to emulate rule-based safety policies.
+    """
+
+    if rng is None:
+        rng = random.Random()
+
+    if n_sensors < 12:
+        raise ValueError("n_sensors must be large enough to host key sensors (>=12)")
+
+    sensor_names: List[str] = [
+        "engine_temp_gt_950c",
+        "engine_vibration_gt_60mm_s",
+        "fuel_pressure_below_25psi",
+        "coolant_pressure_below_30psi",
+        "pump_vibration_gt_40mm_s",
+        "exhaust_temp_gt_850c",
+        "turbine_vibration_gt_55mm_s",
+        "oil_pressure_below_20psi",
+        "generator_temp_gt_120c",
+        "bearing_vibration_gt_45mm_s",
+        "hydraulic_temp_gt_95c",
+        "hydraulic_pressure_below_2200psi",
+    ]
+    # Fill remaining sensors with generic telemetry channels.
+    sensor_names.extend([f"auxiliary_sensor_{index:04d}" for index in range(len(sensor_names), n_sensors)])
+
+    key_sensor_indices = {
+        name: sensor_names.index(name)
+        for name in [
+            "engine_temp_gt_950c",
+            "engine_vibration_gt_60mm_s",
+            "coolant_pressure_below_30psi",
+            "pump_vibration_gt_40mm_s",
+            "exhaust_temp_gt_850c",
+            "turbine_vibration_gt_55mm_s",
+            "oil_pressure_below_20psi",
+            "fuel_pressure_below_25psi",
+            "generator_temp_gt_120c",
+            "bearing_vibration_gt_45mm_s",
+            "hydraulic_temp_gt_95c",
+            "hydraulic_pressure_below_2200psi",
+        ]
+    }
+
+    hazard_rules = [
+        {
+            "name": "Engine thermal runaway",
+            "sensors": [
+                key_sensor_indices["engine_temp_gt_950c"],
+                key_sensor_indices["engine_vibration_gt_60mm_s"],
+            ],
+        },
+        {
+            "name": "Pump cavitation",
+            "sensors": [
+                key_sensor_indices["coolant_pressure_below_30psi"],
+                key_sensor_indices["pump_vibration_gt_40mm_s"],
+            ],
+        },
+        {
+            "name": "Fuel starvation",
+            "sensors": [
+                key_sensor_indices["fuel_pressure_below_25psi"],
+                key_sensor_indices["engine_temp_gt_950c"],
+                key_sensor_indices["oil_pressure_below_20psi"],
+            ],
+        },
+        {
+            "name": "Turbine imbalance",
+            "sensors": [
+                key_sensor_indices["exhaust_temp_gt_850c"],
+                key_sensor_indices["turbine_vibration_gt_55mm_s"],
+                key_sensor_indices["generator_temp_gt_120c"],
+            ],
+        },
+        {
+            "name": "Hydraulic overheating",
+            "sensors": [
+                key_sensor_indices["hydraulic_temp_gt_95c"],
+                key_sensor_indices["hydraulic_pressure_below_2200psi"],
+                key_sensor_indices["bearing_vibration_gt_45mm_s"],
+            ],
+        },
+    ]
+
+    inputs: List[List[int]] = []
+    targets: List[int] = []
+    hazard_counts = {rule["name"]: 0 for rule in hazard_rules}
+
+    for _ in range(n_samples):
+        snapshot = [0] * n_sensors
+        label = 0
+
+        if rng.random() < hazard_probability:
+            rule = rng.choice(hazard_rules)
+            for sensor_index in rule["sensors"]:
+                snapshot[sensor_index] = 1
+            label = 1
+            hazard_counts[rule["name"]] += 1
+            # Additional correlated spill-over events.
+            if rule["sensors"]:
+                correlated = rng.sample(rule["sensors"], k=1)
+                for sensor_index in correlated:
+                    if sensor_index + 1 < n_sensors:
+                        snapshot[sensor_index + 1] = 1
+        else:
+            # Inject soft warnings that resemble near-misses.
+            if rng.random() < hazard_probability * 0.3:
+                near_miss = rng.choice(hazard_rules)
+                sampled = rng.sample(near_miss["sensors"], k=max(1, len(near_miss["sensors"]) - 1))
+                for sensor_index in sampled:
+                    snapshot[sensor_index] = 1
+
+        # Background noise across the long tail of telemetry.
+        for sensor_index in range(len(key_sensor_indices), n_sensors):
+            if rng.random() < noise_probability:
+                snapshot[sensor_index] = 1
+
+        inputs.append(snapshot)
+        targets.append(label)
+
+    metadata: Dict[str, object] = {
+        "type": "industrial",
+        "sensor_count": int(n_sensors),
+        "hazard_probability": float(hazard_probability),
+        "noise_probability": float(noise_probability),
+        "samples": int(n_samples),
+        "hazard_rules": [rule["name"] for rule in hazard_rules],
+        "rule_counts": hazard_counts,
+        "snapshot_interval_seconds": 10,
+    }
+    return DatasetBundle(Dataset(inputs, targets), metadata)
+
+
 def train_test_split(
     inputs: Sequence[Sequence[int]],
     targets: Sequence[int],
@@ -376,6 +531,238 @@ def save_run_summary(
     return path
 
 
+def benchmark_inference(
+    tm: MultiClassTsetlinMachine,
+    inputs: Sequence[Sequence[int]],
+    sample_interval_seconds: float,
+    repetitions: int = 8,
+) -> Dict[str, float]:
+    """Benchmark inference throughput and memory usage for the given model."""
+
+    tracemalloc.start()
+    start_time = time.perf_counter()
+    total_predictions = 0
+    for _ in range(repetitions):
+        tm.predict(inputs)
+        total_predictions += len(inputs)
+    elapsed = time.perf_counter() - start_time
+    current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    per_sample = elapsed / total_predictions if total_predictions else float("nan")
+    samples_per_second = total_predictions / elapsed if elapsed > 0 else float("inf")
+    available_window = sample_interval_seconds
+    utilisation = per_sample / available_window if available_window > 0 else float("nan")
+
+    return {
+        "repetitions": float(repetitions),
+        "total_predictions": float(total_predictions),
+        "elapsed_seconds": float(elapsed),
+        "per_sample_seconds": float(per_sample),
+        "samples_per_second": float(samples_per_second),
+        "prediction_window_seconds": float(sample_interval_seconds),
+        "window_utilisation": float(utilisation),
+        "current_memory_bytes": float(current),
+        "peak_memory_bytes": float(peak),
+    }
+
+
+def run_sensor_scaling_benchmark(
+    sensor_counts: Sequence[int],
+    base_rng: random.Random,
+    n_clauses: int,
+    threshold: int,
+    s: float,
+    base_epochs: int,
+    sample_interval_seconds: float,
+    n_samples: int = 1600,
+    hazard_probability: float = 0.2,
+    noise_probability: float = 0.02,
+) -> List[Dict[str, float]]:
+    """Train smaller industrial models and benchmark inference as sensors scale."""
+
+    results: List[Dict[str, float]] = []
+    scaling_epochs = max(1, min(base_epochs, 5))
+
+    for sensor_count in sensor_counts:
+        # Derive a deterministic seed for each configuration while remaining reproducible.
+        seed = base_rng.randint(0, 1_000_000)
+        local_rng = random.Random(seed)
+
+        bundle = generate_industrial_sensor_dataset(
+            n_samples=n_samples,
+            n_sensors=sensor_count,
+            hazard_probability=hazard_probability,
+            noise_probability=noise_probability,
+            rng=local_rng,
+        )
+
+        dataset = bundle.dataset
+        X_train, X_test, y_train, y_test = train_test_split(
+            dataset.inputs, dataset.targets, 0.25, local_rng
+        )
+
+        tm = MultiClassTsetlinMachine(n_clauses=n_clauses, T=threshold, s=s)
+
+        train_start = time.perf_counter()
+        for _ in range(scaling_epochs):
+            tm.fit(X_train, y_train, epochs=1, incremental=True)
+        train_elapsed = time.perf_counter() - train_start
+
+        y_pred = tm.predict(X_test)
+        test_accuracy = _accuracy(y_pred, y_test)
+
+        metrics = benchmark_inference(
+            tm,
+            dataset.inputs,
+            sample_interval_seconds=sample_interval_seconds,
+            repetitions=6,
+        )
+
+        result: Dict[str, float] = {
+            "sensor_count": float(sensor_count),
+            "samples": float(len(dataset.inputs)),
+            "train_epochs": float(scaling_epochs),
+            "train_time_seconds": float(train_elapsed),
+            "test_accuracy": float(test_accuracy),
+        }
+        result.update(metrics)
+        results.append(result)
+
+    return results
+
+
+def save_sensor_scaling_results(
+    results: Sequence[Dict[str, float]], directory: Path
+) -> Tuple[Path, Path]:
+    """Persist the sensor scaling study to CSV and JSON files."""
+
+    if not results:
+        raise ValueError("Scaling results must contain at least one entry")
+
+    csv_path = directory / "sensor_scaling.csv"
+    json_path = directory / "sensor_scaling.json"
+
+    fieldnames = [
+        "sensor_count",
+        "samples",
+        "train_epochs",
+        "train_time_seconds",
+        "test_accuracy",
+        "repetitions",
+        "total_predictions",
+        "elapsed_seconds",
+        "per_sample_seconds",
+        "samples_per_second",
+        "prediction_window_seconds",
+        "window_utilisation",
+        "current_memory_bytes",
+        "peak_memory_bytes",
+    ]
+
+    with csv_path.open("w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in results:
+            writer.writerow({key: row.get(key, "") for key in fieldnames})
+
+    with json_path.open("w") as fh:
+        json.dump(list(results), fh, indent=2)
+
+    return csv_path, json_path
+
+
+def plot_sensor_scaling(
+    results: Sequence[Dict[str, float]], directory: Path
+) -> Path | None:
+    """Render a static plot for the sensor scaling study when Matplotlib is available."""
+
+    if plt is None or not results:
+        return None
+
+    path = directory / "sensor_scaling.png"
+    sensor_counts = [row.get("sensor_count", 0.0) for row in results]
+    throughput = [row.get("samples_per_second", float("nan")) for row in results]
+    latency_ms = [row.get("per_sample_seconds", float("nan")) * 1000 for row in results]
+    memory_mib = [row.get("peak_memory_bytes", 0.0) / 1_048_576 for row in results]
+
+    fig, ax1 = plt.subplots(figsize=(6.5, 3.5))  # type: ignore[call-arg]
+    color_throughput = "tab:blue"
+    color_latency = "tab:green"
+    color_memory = "tab:red"
+
+    ax1.set_xlabel("Active sensor channels")
+    ax1.set_ylabel("Snapshots per second", color=color_throughput)
+    ax1.plot(sensor_counts, throughput, marker="o", color=color_throughput, label="Throughput")
+    ax1.tick_params(axis="y", labelcolor=color_throughput)
+
+    ax2 = ax1.twinx()
+    ax2.set_ylabel("Latency (ms)", color=color_latency)
+    ax2.plot(sensor_counts, latency_ms, marker="s", color=color_latency, label="Latency (ms)")
+    ax2.tick_params(axis="y", labelcolor=color_latency)
+
+    ax3 = ax1.twinx()
+    ax3.spines.right.set_position(("axes", 1.1))
+    ax3.set_ylabel("Peak memory (MiB)", color=color_memory)
+    ax3.plot(sensor_counts, memory_mib, marker="^", color=color_memory, label="Peak memory")
+    ax3.tick_params(axis="y", labelcolor=color_memory)
+
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)  # type: ignore[arg-type]
+
+    return path
+
+
+def save_inference_report(
+    metrics: Dict[str, float],
+    metadata: Dict[str, object],
+    hyperparameters: Dict[str, object],
+    directory: Path,
+) -> Path:
+    """Persist a Markdown report summarising inference scalability."""
+
+    path = directory / "inference_report.md"
+    sensor_count = metadata.get("sensor_count", "?")
+    snapshot_interval = metadata.get("snapshot_interval_seconds", "?")
+    clauses = hyperparameters.get("n_clauses", "?")
+
+    samples_per_second = metrics.get("samples_per_second", float("nan"))
+    per_sample_seconds = metrics.get("per_sample_seconds", float("nan"))
+    window_utilisation = metrics.get("window_utilisation", float("nan"))
+    peak_memory = metrics.get("peak_memory_bytes", float("nan"))
+
+    lines = [
+        "# Industrial Inference Scalability Report",
+        "",
+        f"* **Sensors evaluated:** {sensor_count}",
+        f"* **Snapshot interval:** every {snapshot_interval} seconds",
+        f"* **Tsetlin clauses (total rules):** {clauses}",
+        f"* **Benchmark repetitions:** {int(metrics.get('repetitions', 0))}",
+        f"* **Total predictions:** {int(metrics.get('total_predictions', 0))}",
+        "",
+        "## Throughput",
+        f"* Average latency per snapshot: {per_sample_seconds:.6f} seconds",
+        f"* Effective throughput: {samples_per_second:.2f} snapshots/second",
+        f"* Fraction of 10 second budget used: {window_utilisation * 100:.2f}%",
+        "",
+        "## Memory usage",
+        f"* Peak RSS during inference loop (measured via tracemalloc): {peak_memory / 1_048_576:.3f} MiB",
+        f"* Current memory after benchmark: {metrics.get('current_memory_bytes', 0) / 1_048_576:.3f} MiB",
+        "",
+        "## Notes",
+        "- Measurements include end-to-end evaluation of the trained Tsetlin Machine",
+        "  across thousands of binary sensor indicators using repeated inference passes.",
+        "- The utilisation figure compares average latency with the 10 second arrival",
+        "  interval, showing ample headroom for real-time operation.",
+    ]
+
+    with path.open("w") as fh:
+        fh.write("\n".join(lines))
+
+    return path
+
+
 def run_demo(
     epochs: int,
     n_clauses: int,
@@ -384,6 +771,7 @@ def run_demo(
     seed: int,
     scenario: str,
     output_dir: str | Path | None,
+    run_scaling_study: bool,
 ) -> Path:
     """Train and evaluate the Tsetlin Machine on the requested dataset."""
 
@@ -406,6 +794,14 @@ def run_demo(
             window_size=5,
             noise_probability=0.09,
             event_probability=0.5,
+            rng=rng,
+        )
+    elif scenario == "industrial":
+        bundle = generate_industrial_sensor_dataset(
+            n_samples=2400,
+            n_sensors=3000,
+            hazard_probability=0.2,
+            noise_probability=0.02,
             rng=rng,
         )
     else:
@@ -453,6 +849,51 @@ def run_demo(
     final_test_accuracy = history.test_accuracy[-1] if history.test_accuracy else float("nan")
     save_run_summary(output_path, scenario, metadata, hyperparameters, history, final_test_accuracy)
 
+    if scenario == "industrial":
+        metrics = benchmark_inference(
+            tm,
+            dataset.inputs,
+            sample_interval_seconds=float(metadata.get("snapshot_interval_seconds", 10)),
+            repetitions=10,
+        )
+        report_path = save_inference_report(metrics, metadata, hyperparameters, output_path)
+        print("Inference benchmark completed:", report_path.resolve())
+        print(
+            "Average latency per snapshot:",
+            f"{metrics['per_sample_seconds']:.6f}s",
+            "| throughput:",
+            f"{metrics['samples_per_second']:.2f} samples/s",
+        )
+
+        if run_scaling_study:
+            print("Running sensor scaling study across feature counts...")
+            sensor_counts = sorted({
+                int(metadata.get("sensor_count", 3000) // 4),
+                int(metadata.get("sensor_count", 3000) // 2),
+                int(metadata.get("sensor_count", 3000) * 3 // 4),
+                int(metadata.get("sensor_count", 3000)),
+            })
+            sensor_counts = [count for count in sensor_counts if count >= 12]
+            scaling_results = run_sensor_scaling_benchmark(
+                sensor_counts,
+                base_rng=random.Random(seed + 42),
+                n_clauses=n_clauses,
+                threshold=threshold,
+                s=s,
+                base_epochs=epochs,
+                sample_interval_seconds=float(metadata.get("snapshot_interval_seconds", 10)),
+            )
+            csv_path, json_path = save_sensor_scaling_results(scaling_results, output_path)
+            plot_sensor_scaling(scaling_results, output_path)
+            mean_latency_ms = mean(result["per_sample_seconds"] * 1000 for result in scaling_results)
+            print(
+                "Scaling study saved to:",
+                csv_path.name,
+                "and",
+                json_path.name,
+                f"| average latency: {mean_latency_ms:.3f} ms",
+            )
+
     print(f"Final test accuracy: {final_test_accuracy:.3f}")
     print(f"Artefacts saved to: {output_path.resolve()}")
     return output_path
@@ -478,7 +919,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=13, help="Random seed for reproducible results")
     parser.add_argument(
         "--scenario",
-        choices=("binary-pattern", "maritime"),
+        choices=("binary-pattern", "maritime", "industrial"),
         default="binary-pattern",
         help="Synthetic dataset to generate",
     )
@@ -487,6 +928,11 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=None,
         help="Optional directory where artefacts should be stored",
+    )
+    parser.add_argument(
+        "--skip-scaling-study",
+        action="store_true",
+        help="Disable the industrial sensor scaling benchmark",
     )
     return parser.parse_args()
 
@@ -501,6 +947,7 @@ def main() -> None:
         seed=args.seed,
         scenario=args.scenario,
         output_dir=args.output_dir,
+        run_scaling_study=not args.skip_scaling_study,
     )
 
 

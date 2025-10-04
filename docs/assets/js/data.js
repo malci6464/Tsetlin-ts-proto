@@ -75,6 +75,13 @@ function createTable(target, rows, columns) {
   target.appendChild(table);
 }
 
+function countActiveBits(bitString) {
+  if (typeof bitString !== "string" || bitString.length === 0) {
+    return 0;
+  }
+  return [...bitString].reduce((acc, bit) => acc + (bit === "1" ? 1 : 0), 0);
+}
+
 const SCENARIO_CONFIG = {
   maritime: {
     basePath: "time_series_outputs/maritime/20251003_125026",
@@ -168,6 +175,59 @@ const SCENARIO_CONFIG = {
       renderModelComparisonChart();
     },
   },
+  industrial: {
+    basePath: "time_series_outputs/industrial/20251004_150811",
+    sampleTableTarget: "#industrial-sample-table",
+    sampleLimit: 10,
+    sampleColumns: [
+      { key: "sample_index", label: "Snapshot" },
+      {
+        key: "label",
+        label: "Alarm",
+        render: (value) => (Number(value) === 1 ? "Triggered" : "Normal"),
+      },
+      {
+        key: "window_bits",
+        label: "Active sensors",
+        render: (value) => countActiveBits(value),
+      },
+    ],
+    predictionType: "classification",
+    predictionSummaryTarget: "#industrial-prediction-summary",
+    metadataTarget: "#industrial-metadata",
+    hyperparameterTarget: "#industrial-hyperparameters",
+    sensorListTarget: "#industrial-hazard-rules",
+    sensorListEntries: (summary) => {
+      const metadata = summary.metadata || {};
+      const ruleCounts = metadata.rule_counts || {};
+      const rules = metadata.hazard_rules || [];
+      return rules.map((rule) => {
+        const count = ruleCounts[rule] ?? 0;
+        return `<strong>${rule}</strong><span>${count} alarms</span>`;
+      });
+    },
+    metadataEntries: (summary) => {
+      const metadata = summary.metadata || {};
+      return [
+        ["Scenario", "Industrial anomaly detection"],
+        ["Sensor channels", metadata.sensor_count],
+        ["Samples", metadata.samples],
+        ["Snapshot interval", `${metadata.snapshot_interval_seconds ?? "?"} s`],
+        ["Hazard probability", metadata.hazard_probability],
+        ["Noise probability", metadata.noise_probability],
+      ];
+    },
+    scalingCsv: "sensor_scaling.csv",
+    scalingCharts: {
+      throughput: "#scaling-throughput-chart",
+      memory: "#scaling-memory-chart",
+    },
+    scalingTableTarget: "#scaling-table",
+    onScalingDataLoaded: (rows, context) => {
+      renderSensorScalingCharts(rows, context.config);
+      renderSensorScalingTable(rows, context.config);
+    },
+  },
 };
 
 async function initializePage() {
@@ -207,6 +267,16 @@ async function initializePage() {
     }
   }
 
+  if (config.scalingCsv) {
+    const scalingRows = await fetchCSV(`${basePath}/${config.scalingCsv}`);
+    if (typeof config.onScalingDataLoaded === "function") {
+      config.onScalingDataLoaded(scalingRows, { summary, config });
+    } else {
+      renderSensorScalingCharts(scalingRows, config);
+      renderSensorScalingTable(scalingRows, config);
+    }
+  }
+
   if (typeof config.onAfterRender === "function") {
     config.onAfterRender({ summary, accuracyHistory, sampleWindows, predictions, extraData, config });
   }
@@ -233,8 +303,15 @@ function populateSummary(summary, config = {}) {
   }
 
   const sensorList = document.querySelector(config.sensorListTarget ?? "#sensor-list");
-  if (sensorList && Array.isArray(metadata.sensors)) {
-    sensorList.innerHTML = metadata.sensors.map((sensor) => `<li>${sensor}</li>`).join("");
+  if (sensorList) {
+    if (typeof config.sensorListEntries === "function") {
+      const entries = config.sensorListEntries(summary);
+      sensorList.innerHTML = entries
+        .map((entry) => `<li>${entry}</li>`)
+        .join("");
+    } else if (Array.isArray(metadata.sensors)) {
+      sensorList.innerHTML = metadata.sensors.map((sensor) => `<li>${sensor}</li>`).join("");
+    }
   }
 
   const hyperparameterList = document.querySelector(config.hyperparameterTarget ?? "#hyperparameter-list");
@@ -433,6 +510,165 @@ function renderPredictionSummary(predictions, config = {}) {
       </div>
     </div>
   `;
+}
+
+function renderSensorScalingCharts(rows, config = {}) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return;
+  }
+
+  const sorted = [...rows].sort((a, b) => Number(a.sensor_count) - Number(b.sensor_count));
+  const sensorCounts = sorted.map((row) => Number(row.sensor_count));
+  const throughput = sorted.map((row) => Number(row.samples_per_second));
+  const latencyMs = sorted.map((row) => Number(row.per_sample_seconds) * 1000);
+  const memoryMiB = sorted.map((row) => Number(row.peak_memory_bytes) / 1_048_576);
+
+  const throughputTarget = config.scalingCharts?.throughput ?? "#scaling-throughput-chart";
+  const memoryTarget = config.scalingCharts?.memory ?? "#scaling-memory-chart";
+
+  const throughputCanvas = document.querySelector(throughputTarget);
+  if (throughputCanvas) {
+    new Chart(throughputCanvas, {
+      type: "line",
+      data: {
+        labels: sensorCounts,
+        datasets: [
+          {
+            label: "Throughput (snapshots/s)",
+            data: throughput,
+            borderColor: "#0ea5e9",
+            backgroundColor: "rgba(14, 165, 233, 0.2)",
+            tension: 0.25,
+            fill: true,
+            yAxisID: "y",
+          },
+          {
+            label: "Latency (ms)",
+            data: latencyMs,
+            borderColor: "#f97316",
+            backgroundColor: "rgba(249, 115, 22, 0.2)",
+            tension: 0.25,
+            fill: true,
+            yAxisID: "y1",
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: "index", intersect: false },
+        stacked: false,
+        scales: {
+          x: {
+            title: { display: true, text: "Active sensor channels" },
+          },
+          y: {
+            type: "linear",
+            position: "left",
+            title: { display: true, text: "Snapshots per second" },
+          },
+          y1: {
+            type: "linear",
+            position: "right",
+            title: { display: true, text: "Latency per snapshot (ms)" },
+            grid: { drawOnChartArea: false },
+          },
+        },
+        plugins: {
+          legend: { position: "bottom" },
+        },
+      },
+    });
+  }
+
+  const memoryCanvas = document.querySelector(memoryTarget);
+  if (memoryCanvas) {
+    new Chart(memoryCanvas, {
+      type: "line",
+      data: {
+        labels: sensorCounts,
+        datasets: [
+          {
+            label: "Peak memory (MiB)",
+            data: memoryMiB,
+            borderColor: "#22c55e",
+            backgroundColor: "rgba(34, 197, 94, 0.25)",
+            tension: 0.25,
+            fill: true,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: {
+            title: { display: true, text: "Active sensor channels" },
+          },
+          y: {
+            title: { display: true, text: "Peak memory (MiB)" },
+          },
+        },
+        plugins: {
+          legend: { display: false },
+        },
+      },
+    });
+  }
+}
+
+function renderSensorScalingTable(rows, config = {}) {
+  const targetSelector = config.scalingTableTarget ?? "#scaling-table";
+  const container = document.querySelector(targetSelector);
+  if (!container || !Array.isArray(rows) || rows.length === 0) {
+    return;
+  }
+
+  const processed = rows
+    .map((row) => ({
+      sensor_count: Number(row.sensor_count),
+      samples_per_second: Number(row.samples_per_second),
+      per_sample_ms: Number(row.per_sample_seconds) * 1000,
+      peak_memory_mib: Number(row.peak_memory_bytes) / 1_048_576,
+      window_utilisation: Number(row.window_utilisation) * 100,
+      train_time_seconds: Number(row.train_time_seconds),
+      test_accuracy: Number(row.test_accuracy) * 100,
+    }))
+    .sort((a, b) => a.sensor_count - b.sensor_count);
+
+  const columns = [
+    { key: "sensor_count", label: "Sensors" },
+    {
+      key: "samples_per_second",
+      label: "Throughput (snapshots/s)",
+      render: (value) => value.toFixed(2),
+    },
+    {
+      key: "per_sample_ms",
+      label: "Latency (ms)",
+      render: (value) => value.toFixed(3),
+    },
+    {
+      key: "peak_memory_mib",
+      label: "Peak memory (MiB)",
+      render: (value) => value.toFixed(2),
+    },
+    {
+      key: "window_utilisation",
+      label: "Window utilisation (%)",
+      render: (value) => value.toFixed(2),
+    },
+    {
+      key: "train_time_seconds",
+      label: "Training time (s)",
+      render: (value) => value.toFixed(1),
+    },
+    {
+      key: "test_accuracy",
+      label: "Test accuracy (%)",
+      render: (value) => value.toFixed(2),
+    },
+  ];
+
+  createTable(container, processed, columns);
 }
 
 function renderRegressionPredictionChart(predictions, targetSelector) {

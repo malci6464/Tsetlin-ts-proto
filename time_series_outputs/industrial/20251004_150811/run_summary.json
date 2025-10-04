@@ -1,0 +1,58 @@
+{
+  "scenario": "industrial",
+  "metadata": {
+    "type": "industrial",
+    "sensor_count": 3000,
+    "hazard_probability": 0.2,
+    "noise_probability": 0.02,
+    "samples": 2400,
+    "hazard_rules": [
+      "Engine thermal runaway",
+      "Pump cavitation",
+      "Fuel starvation",
+      "Turbine imbalance",
+      "Hydraulic overheating"
+    ],
+    "rule_counts": {
+      "Engine thermal runaway": 92,
+      "Pump cavitation": 96,
+      "Fuel starvation": 92,
+      "Turbine imbalance": 100,
+      "Hydraulic overheating": 94
+    },
+    "snapshot_interval_seconds": 10
+  },
+  "hyperparameters": {
+    "epochs": 5,
+    "n_clauses": 200,
+    "threshold": 80,
+    "s": 4.0,
+    "seed": 1,
+    "test_size": 0.25
+  },
+  "training": {
+    "epochs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "train_accuracy": [
+      0.9816666666666667,
+      0.9933333333333333,
+      0.9994444444444445,
+      0.9988888888888889,
+      0.9994444444444445
+    ],
+    "test_accuracy": [
+      0.965,
+      0.9583333333333334,
+      0.9666666666666667,
+      0.9616666666666667,
+      0.9533333333333334
+    ],
+    "final_test_accuracy": 0.9533333333333334,
+    "best_test_accuracy": 0.9666666666666667
+  }
+}
