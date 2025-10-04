@@ -176,7 +176,7 @@ const SCENARIO_CONFIG = {
     },
   },
   industrial: {
-    basePath: "time_series_outputs/industrial/20251004_150811",
+    basePath: "time_series_outputs/industrial/20251004_155824",
     sampleTableTarget: "#industrial-sample-table",
     sampleLimit: 10,
     sampleColumns: [
@@ -521,7 +521,9 @@ function renderSensorScalingCharts(rows, config = {}) {
   const sensorCounts = sorted.map((row) => Number(row.sensor_count));
   const throughput = sorted.map((row) => Number(row.samples_per_second));
   const latencyMs = sorted.map((row) => Number(row.per_sample_seconds) * 1000);
-  const memoryMiB = sorted.map((row) => Number(row.peak_memory_bytes) / 1_048_576);
+  const rssBaselineMiB = sorted.map((row) => Number(row.rss_baseline_bytes) / 1_048_576);
+  const rssPeakMiB = sorted.map((row) => Number(row.rss_peak_bytes) / 1_048_576);
+  const rssFinalMiB = sorted.map((row) => Number(row.rss_final_bytes) / 1_048_576);
 
   const throughputTarget = config.scalingCharts?.throughput ?? "#scaling-throughput-chart";
   const memoryTarget = config.scalingCharts?.memory ?? "#scaling-memory-chart";
@@ -588,27 +590,46 @@ function renderSensorScalingCharts(rows, config = {}) {
         labels: sensorCounts,
         datasets: [
           {
-            label: "Peak memory (MiB)",
-            data: memoryMiB,
-            borderColor: "#22c55e",
-            backgroundColor: "rgba(34, 197, 94, 0.25)",
+            label: "Baseline RSS (MiB)",
+            data: rssBaselineMiB,
+            borderColor: "#8b5cf6",
+            backgroundColor: "rgba(139, 92, 246, 0.2)",
             tension: 0.25,
             fill: true,
+          },
+          {
+            label: "Peak RSS (MiB)",
+            data: rssPeakMiB,
+            borderColor: "#ef4444",
+            backgroundColor: "rgba(239, 68, 68, 0.2)",
+            tension: 0.25,
+            fill: true,
+          },
+          {
+            label: "Post-benchmark RSS (MiB)",
+            data: rssFinalMiB,
+            borderColor: "#10b981",
+            backgroundColor: "rgba(16, 185, 129, 0.15)",
+            tension: 0.25,
+            fill: true,
+            borderDash: [6, 4],
           },
         ],
       },
       options: {
         responsive: true,
+        interaction: { mode: "index", intersect: false },
+        stacked: false,
         scales: {
           x: {
             title: { display: true, text: "Active sensor channels" },
           },
           y: {
-            title: { display: true, text: "Peak memory (MiB)" },
+            title: { display: true, text: "Resident set size (MiB)" },
           },
         },
         plugins: {
-          legend: { display: false },
+          legend: { position: "bottom" },
         },
       },
     });
@@ -627,7 +648,9 @@ function renderSensorScalingTable(rows, config = {}) {
       sensor_count: Number(row.sensor_count),
       samples_per_second: Number(row.samples_per_second),
       per_sample_ms: Number(row.per_sample_seconds) * 1000,
-      peak_memory_mib: Number(row.peak_memory_bytes) / 1_048_576,
+      rss_baseline_mib: Number(row.rss_baseline_bytes) / 1_048_576,
+      rss_peak_mib: Number(row.rss_peak_bytes) / 1_048_576,
+      rss_final_mib: Number(row.rss_final_bytes) / 1_048_576,
       window_utilisation: Number(row.window_utilisation) * 100,
       train_time_seconds: Number(row.train_time_seconds),
       test_accuracy: Number(row.test_accuracy) * 100,
@@ -647,8 +670,18 @@ function renderSensorScalingTable(rows, config = {}) {
       render: (value) => value.toFixed(3),
     },
     {
-      key: "peak_memory_mib",
-      label: "Peak memory (MiB)",
+      key: "rss_baseline_mib",
+      label: "Baseline RSS (MiB)",
+      render: (value) => value.toFixed(2),
+    },
+    {
+      key: "rss_peak_mib",
+      label: "Peak RSS (MiB)",
+      render: (value) => value.toFixed(2),
+    },
+    {
+      key: "rss_final_mib",
+      label: "Post-benchmark RSS (MiB)",
       render: (value) => value.toFixed(2),
     },
     {
