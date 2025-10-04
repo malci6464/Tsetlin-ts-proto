@@ -42,16 +42,61 @@ import argparse
 import csv
 import importlib.util
 import json
+import os
 import random
-import time
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from statistics import mean
 from typing import Dict, List, Sequence, Tuple
 
-import tracemalloc
-from statistics import mean
+try:  # pragma: no cover - psutil is optional in minimal environments
+    import psutil
+except Exception:  # pragma: no cover - fallback when psutil is unavailable
+    psutil = None  # type: ignore[assignment]
+
+try:  # pragma: no cover - resource module may not be present on non-Unix
+    import resource
+except Exception:  # pragma: no cover - Windows compatibility shim
+    resource = None  # type: ignore[assignment]
+
+
+_PROCESS = psutil.Process(os.getpid()) if psutil is not None else None
+
+
+def _read_process_rss() -> float:
+    """Return the resident-set size of the current process in bytes."""
+
+    if _PROCESS is not None:
+        try:
+            return float(_PROCESS.memory_info().rss)
+        except Exception:  # pragma: no cover - psutil internal failure
+            return float("nan")
+
+    # Fallback for environments without psutil (e.g. CI sandboxes).
+    try:  # pragma: no cover - exercised when psutil is unavailable
+        with open("/proc/self/statm", "r", encoding="utf8") as fh:
+            parts = fh.readline().split()
+            if len(parts) >= 2:
+                rss_pages = int(parts[1])
+                try:
+                    page_size = resource.getpagesize() if resource is not None else os.sysconf("SC_PAGE_SIZE")
+                except Exception:
+                    page_size = 4096
+                return float(rss_pages * page_size)
+    except Exception:
+        pass
+
+    if resource is not None:  # pragma: no cover - fallback path for psutil absence
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        rss = getattr(usage, "ru_maxrss", 0)
+        if sys.platform != "darwin":
+            rss *= 1024  # Linux returns KiB; macOS already returns bytes
+        return float(rss)
+
+    return float("nan")
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -539,15 +584,17 @@ def benchmark_inference(
 ) -> Dict[str, float]:
     """Benchmark inference throughput and memory usage for the given model."""
 
-    tracemalloc.start()
+    rss_before = _read_process_rss()
+    rss_peak = rss_before
     start_time = time.perf_counter()
     total_predictions = 0
     for _ in range(repetitions):
         tm.predict(inputs)
         total_predictions += len(inputs)
+        rss_peak = max(rss_peak, _read_process_rss())
     elapsed = time.perf_counter() - start_time
-    current, peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
+    rss_after = _read_process_rss()
+    rss_peak = max(rss_peak, rss_after)
 
     per_sample = elapsed / total_predictions if total_predictions else float("nan")
     samples_per_second = total_predictions / elapsed if elapsed > 0 else float("inf")
@@ -562,8 +609,9 @@ def benchmark_inference(
         "samples_per_second": float(samples_per_second),
         "prediction_window_seconds": float(sample_interval_seconds),
         "window_utilisation": float(utilisation),
-        "current_memory_bytes": float(current),
-        "peak_memory_bytes": float(peak),
+        "rss_baseline_bytes": float(rss_before),
+        "rss_peak_bytes": float(rss_peak),
+        "rss_final_bytes": float(rss_after),
     }
 
 
@@ -656,8 +704,9 @@ def save_sensor_scaling_results(
         "samples_per_second",
         "prediction_window_seconds",
         "window_utilisation",
-        "current_memory_bytes",
-        "peak_memory_bytes",
+        "rss_baseline_bytes",
+        "rss_peak_bytes",
+        "rss_final_bytes",
     ]
 
     with csv_path.open("w", newline="") as fh:
@@ -684,12 +733,14 @@ def plot_sensor_scaling(
     sensor_counts = [row.get("sensor_count", 0.0) for row in results]
     throughput = [row.get("samples_per_second", float("nan")) for row in results]
     latency_ms = [row.get("per_sample_seconds", float("nan")) * 1000 for row in results]
-    memory_mib = [row.get("peak_memory_bytes", 0.0) / 1_048_576 for row in results]
+    rss_baseline_mib = [row.get("rss_baseline_bytes", 0.0) / 1_048_576 for row in results]
+    rss_peak_mib = [row.get("rss_peak_bytes", 0.0) / 1_048_576 for row in results]
 
     fig, ax1 = plt.subplots(figsize=(6.5, 3.5))  # type: ignore[call-arg]
     color_throughput = "tab:blue"
     color_latency = "tab:green"
-    color_memory = "tab:red"
+    color_memory_baseline = "tab:purple"
+    color_memory_peak = "tab:red"
 
     ax1.set_xlabel("Active sensor channels")
     ax1.set_ylabel("Snapshots per second", color=color_throughput)
@@ -703,9 +754,29 @@ def plot_sensor_scaling(
 
     ax3 = ax1.twinx()
     ax3.spines.right.set_position(("axes", 1.1))
-    ax3.set_ylabel("Peak memory (MiB)", color=color_memory)
-    ax3.plot(sensor_counts, memory_mib, marker="^", color=color_memory, label="Peak memory")
-    ax3.tick_params(axis="y", labelcolor=color_memory)
+    ax3.set_ylabel("Resident set size (MiB)", color=color_memory_peak)
+    ax3.plot(
+        sensor_counts,
+        rss_baseline_mib,
+        marker="^",
+        color=color_memory_baseline,
+        label="Baseline RSS",
+    )
+    ax3.plot(
+        sensor_counts,
+        rss_peak_mib,
+        marker="D",
+        color=color_memory_peak,
+        label="Peak RSS",
+    )
+    ax3.tick_params(axis="y", labelcolor=color_memory_peak)
+
+    lines, labels = [], []
+    for axis in (ax1, ax2, ax3):
+        line, label = axis.get_legend_handles_labels()
+        lines.extend(line)
+        labels.extend(label)
+    ax1.legend(lines, labels, loc="upper left")
 
     fig.tight_layout()
     fig.savefig(path, dpi=150)
@@ -730,7 +801,9 @@ def save_inference_report(
     samples_per_second = metrics.get("samples_per_second", float("nan"))
     per_sample_seconds = metrics.get("per_sample_seconds", float("nan"))
     window_utilisation = metrics.get("window_utilisation", float("nan"))
-    peak_memory = metrics.get("peak_memory_bytes", float("nan"))
+    rss_baseline = metrics.get("rss_baseline_bytes", float("nan"))
+    rss_peak = metrics.get("rss_peak_bytes", float("nan"))
+    rss_final = metrics.get("rss_final_bytes", float("nan"))
 
     lines = [
         "# Industrial Inference Scalability Report",
@@ -747,18 +820,21 @@ def save_inference_report(
         f"* Fraction of 10 second budget used: {window_utilisation * 100:.2f}%",
         "",
         "## Memory usage",
-        f"* Peak RSS during inference loop (measured via tracemalloc): {peak_memory / 1_048_576:.3f} MiB",
-        f"* Current memory after benchmark: {metrics.get('current_memory_bytes', 0) / 1_048_576:.3f} MiB",
+        f"* Baseline RSS before benchmark: {rss_baseline / 1_048_576:.3f} MiB",
+        f"* Peak RSS during benchmark: {rss_peak / 1_048_576:.3f} MiB",
+        f"* RSS after benchmark completion: {rss_final / 1_048_576:.3f} MiB",
         "",
         "## Notes",
         "- Measurements include end-to-end evaluation of the trained Tsetlin Machine",
         "  across thousands of binary sensor indicators using repeated inference passes.",
         "- The utilisation figure compares average latency with the 10 second arrival",
         "  interval, showing ample headroom for real-time operation.",
+        "- RSS figures include allocations made by the native pyTsetlinMachine backend",
+        "  ensuring that model weights and buffers are accounted for in the totals.",
     ]
 
     with path.open("w") as fh:
-        fh.write("\n".join(lines))
+        fh.write("\n".join(lines) + "\n")
 
     return path
 
