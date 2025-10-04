@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Industrial anomaly detection — Tsetlin Explorer</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js" defer></script>
+    <script src="assets/js/data.js" defer></script>
+  </head>
+  <body data-page="industrial">
+    <header>
+      <h1>Industrial anomaly detection</h1>
+      <p>
+        Visual summary of the <strong>20251004_150811</strong> industrial training run located in
+        <code>time_series_outputs/industrial/20251004_150811</code>.
+      </p>
+    </header>
+    <main>
+      <section>
+        <h2>Run summary</h2>
+        <div id="accuracy-badges" style="display: flex; gap: 0.5rem; flex-wrap: wrap"></div>
+        <div class="card-grid" style="margin-top: 1rem">
+          <div class="card">
+            <h3>Metadata</h3>
+            <ul id="industrial-metadata" class="summary-list"></ul>
+          </div>
+          <div class="card">
+            <h3>Hyperparameters</h3>
+            <ul id="industrial-hyperparameters" class="summary-list"></ul>
+          </div>
+          <div class="card">
+            <h3>Hazard rules</h3>
+            <ul id="industrial-hazard-rules" class="summary-list hazard-list"></ul>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Accuracy over epochs</h2>
+        <canvas id="accuracy-chart" height="300"></canvas>
+      </section>
+
+      <section>
+        <h2>Prediction summary</h2>
+        <div id="industrial-prediction-summary"></div>
+      </section>
+
+      <section>
+        <h2>Sample snapshots</h2>
+        <p>The first 10 industrial telemetry snapshots from <code>sample_windows.csv</code>.</p>
+        <div id="industrial-sample-table" class="table-scroll"></div>
+      </section>
+
+      <section>
+        <h2>Sensor scaling study</h2>
+        <p>
+          Benchmarking throughput, latency, and memory as the number of simultaneous sensor channels
+          grows.
+        </p>
+        <div class="card-grid" style="margin-top: 1rem">
+          <div class="card">
+            <h3>Throughput &amp; latency</h3>
+            <canvas id="scaling-throughput-chart" height="260"></canvas>
+          </div>
+          <div class="card">
+            <h3>Peak memory</h3>
+            <canvas id="scaling-memory-chart" height="260"></canvas>
+          </div>
+        </div>
+        <div id="scaling-table" class="table-scroll" style="margin-top: 1rem"></div>
+      </section>
+    </main>
+    <footer>
+      <p><a href="index.html">Back to all scenarios</a></p>
+    </footer>
+  </body>
+</html>

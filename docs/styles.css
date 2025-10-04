@@ -117,6 +117,16 @@ tbody tr:nth-child(even) {
   border-bottom: none;
 }
 
+.hazard-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.hazard-list span {
+  color: #475569;
+}
+
 footer {
   text-align: center;
   color: #64748b;
@@ -145,5 +155,9 @@ footer {
 
   th, td {
     border-color: #1f2937;
+  }
+
+  .hazard-list span {
+    color: #cbd5f5;
   }
 }
